@@ -11,7 +11,7 @@ import json
 import os
 from pathlib import Path
 
-from . import dataset, sources, synth, train
+from . import cloud, dataset, sources, synth, train
 from .config import DAYS, Job
 
 
@@ -75,9 +75,13 @@ def run(job: Job, *, promote_ok: bool = True) -> dict:
     stats = build(job, run_dir)
     eval_file = run_dir / "eval.jsonl"
     baseline_model = str(current(job) or job.train["student"])
-    base = train.run_eval(job, baseline_model, eval_file, run_dir / "eval-baseline.json")
-    weights = train.run_sft(job, run_dir)
-    new = train.run_eval(job, str(weights), eval_file, run_dir / "eval-trained.json")
+    if cloud.wanted(job):
+        # rented GPU: train and both evals run there; weights and scores come back here
+        weights, base, new = cloud.train_and_eval(job, run_dir, baseline_model)
+    else:
+        base = train.run_eval(job, baseline_model, eval_file, run_dir / "eval-baseline.json")
+        weights = train.run_sft(job, run_dir)
+        new = train.run_eval(job, str(weights), eval_file, run_dir / "eval-trained.json")
     ok, reason = gate(job, base, new)
     metric = job.gate.get("metric", f"{job.primary.name}_acc")
     scores = {"baseline": baseline_model, "baseline_score": base[metric], "trained_score": new[metric],

@@ -31,8 +31,8 @@ Our first job triages a founder's own mail on a DGX Spark. The data was 1,167 re
 
 ## Status
 
-- **Version:** 0.1.0. Interfaces can change until 1.0.
-- **Runs on:** Linux with one NVIDIA GPU, tested on a DGX Spark (GB10, aarch64, CUDA 13).
+- **Version:** 0.2.0. Interfaces can change until 1.0.
+- **Runs on:** Linux with one NVIDIA GPU, tested on a DGX Spark (GB10, aarch64, CUDA 13), or on a GPU rented per run (tested on an RTX PRO 6000).
 - **Jobs:** decisions with fixed answers: one choice field plus optional true/false fields, answered as one JSON object.
 - **Not yet:**
   - Logit-only decisions with calibrated probabilities (one forward pass, no generated tokens).
@@ -78,8 +78,28 @@ One TOML file per job. The parts:
 | `[train]` | `student` (HF id), `rl_dir`, `max_steps`, `batch_size`, `seq_len`, `lr`, `max_per_choice`, `renderer` |
 | `[gate]` | `metric` (default `<first field>_acc`), `min_gain`, `min_valid_json` |
 | `[schedule]` | `training_day` |
+| `[train.cloud]` | train on a rented GPU (Prime Intellect): `data_leaves_fleet`, `gpus`, `spot`, `max_price_hr`, `max_hours`, `disk_gb`; see `lumbridge_train/cloud.py` |
+| `[label]` | labeling page: `teacher`, `goal`, `prelabel_max`, `suggest` (`teacher` or `source`), `labeler` |
 
 See `jobs/example-ticket-routing.toml` for a complete file.
+
+## Rented GPUs
+
+A job with `[train.cloud]` trains on a rented GPU instead of yours: the runner picks the first available offer from
+the job's GPU list (spot first), copies the code, dataset and baseline weights there, trains and evaluates, copies the
+weights and scores back, and deletes the machine, also when something fails. `python -m lumbridge_train cloud-reap`
+deletes any of its machines left running (run it hourly as a safety net). The dataset leaves your box, so the job must
+say `data_leaves_fleet = true`; without it the runner refuses. On an RTX PRO 6000 a LoRA run of an 8B model goes about
+ten times faster than on a DGX Spark.
+
+## Labeling page
+
+A model's labels are a guess; your own are the test. `python -m lumbridge_train label jobs/<job>.toml` serves a page
+(default `127.0.0.1:8861`) that shows one example at a time with the teacher's answer already picked: press Enter to
+keep it, a number to change it, `X` for "not a real example". Rows where the teacher and the source disagree come
+first. Your answers go to `<workdir>/labels.jsonl` and win over the source in every build; with
+`split.eval_from = "human"` they become the eval set, so the gate measures agreement with you, not with a model.
+The page has no login: keep it on localhost or a private network.
 
 ## Privacy
 

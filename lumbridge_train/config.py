@@ -53,6 +53,7 @@ class Job:
     schedule: dict
     workdir: Path
     path: Path
+    label: dict = field(default_factory=dict)
 
     @property
     def primary(self) -> Field:
@@ -96,4 +97,5 @@ def load(path: str | os.PathLike) -> Job:
         schedule=schedule,
         workdir=expand(raw.get("workdir", f"~/lumbridge-train-runs/{j['name']}")),
         path=path,
+        label=raw.get("label", {}),
     )

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import fnmatch
 import glob
+import hashlib
 import json
 import sqlite3
 import subprocess
@@ -20,6 +21,9 @@ from .config import Job, expand
 
 # Outputs of these models may not be used to train a model (provider terms). Override per source.
 DEFAULT_EVAL_ONLY = ["claude-*", "gpt-*", "o[0-9]*", "gemini-*", "<synthetic>"]
+
+# Set by collect(keep_unlabeled=True): sources also yield rows with no (valid) labels, for labeling.
+KEEP_UNLABELED = "_keep_unlabeled"
 
 
 @dataclass
@@ -63,11 +67,11 @@ def sqlite_source(job: Job, cfg: dict) -> Iterator[Example]:
         for row in con.execute(cfg["query"]):
             d = dict(row)
             labels = _coerce(job, d)
-            if labels is None or not d.get("input"):
+            if not d.get("input") or (labels is None and not cfg.get(KEEP_UNLABELED)):
                 continue
             yield Example(
                 input=str(d["input"]),
-                labels=labels,
+                labels=labels or {},
                 ts=float(d.get("ts") or 0),
                 origin=f"{cfg.get('name', 'sqlite')}:{d.get('origin') or 'row'}",
             )
@@ -82,8 +86,9 @@ def jsonl_source(job: Job, cfg: dict) -> Iterator[Example]:
             for line in fh:
                 d = json.loads(line)
                 labels = _coerce(job, d)
-                if labels is not None and d.get("input"):
-                    yield Example(d["input"], labels, float(d.get("ts", 0)), cfg.get("name", "jsonl"))
+                if d.get("input") and (labels is not None or cfg.get(KEEP_UNLABELED)):
+                    origin = f"{cfg.get('name', 'jsonl')}:{d['origin']}" if d.get("origin") else cfg.get("name", "jsonl")
+                    yield Example(d["input"], labels or {}, float(d.get("ts", 0)), origin)
 
 
 def _content_text(c) -> str:
@@ -157,9 +162,59 @@ SOURCES = {
 }
 
 
-def collect(job: Job) -> list[Example]:
+def example_key(text: str) -> str:
+    """Stable id of an input: the same text, ignoring case and spacing, is the same example."""
+    return hashlib.sha1(" ".join(text.split()).lower().encode()).hexdigest()
+
+
+def human_labels(job: Job) -> dict[str, dict]:
+    """Labels a person set in the labeling page (`<workdir>/labels.jsonl`), last write per example wins.
+
+    Each value is {"labels": {...}} or {"drop": True} for rows marked as not a real example.
+    """
+    p = job.workdir / "labels.jsonl"
+    out: dict[str, dict] = {}
+    if p.exists():
+        for line in p.read_text().splitlines():
+            try:
+                d = json.loads(line)
+            except ValueError:
+                continue
+            if d.get("undo"):
+                out.pop(d["key"], None)
+            elif d.get("drop"):
+                out[d["key"]] = {"drop": True, "by": d.get("by", "human")}
+            else:
+                labels = _coerce(job, d.get("labels") or {})
+                if labels is not None:
+                    out[d["key"]] = {"labels": labels, "by": d.get("by", "human")}
+    return out
+
+
+def apply_human_labels(job: Job, rows: list[Example]) -> list[Example]:
+    """A person's label replaces the source's; rows they marked as not real are dropped."""
+    human = human_labels(job)
+    if not human:
+        return rows
+    out = []
+    for e in rows:
+        h = human.get(example_key(e.input))
+        if h is None:
+            out.append(e)
+        elif not h.get("drop"):
+            e.labels = h["labels"]
+            e.meta = {**e.meta, "human": h["by"], "source_origin": e.origin}
+            e.origin = f"human:{h['by']}"
+            e.eval_only = False  # the answer is now the person's, not the model's
+            out.append(e)
+    return out
+
+
+def collect(job: Job, keep_unlabeled: bool = False, human: bool = True) -> list[Example]:
     rows: list[Example] = []
     for cfg in job.sources:
+        if keep_unlabeled:
+            cfg = {**cfg, KEEP_UNLABELED: True}
         fn = SOURCES[cfg["type"]]
         n0 = len(rows)
         rows.extend(fn(job, cfg))
@@ -168,4 +223,4 @@ def collect(job: Job) -> list[Example]:
             # keep the newest rows of this source
             mine = sorted(rows[n0:], key=lambda e: e.ts, reverse=True)[:limit]
             rows = rows[:n0] + mine
-    return rows
+    return apply_human_labels(job, rows) if human else rows

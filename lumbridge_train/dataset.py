@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import collections
-import hashlib
 import json
 import random
 from pathlib import Path
 
 from .config import Job
-from .sources import Example
+from .sources import Example, example_key
 
 
 def answer(job: Job, labels: dict) -> str:
@@ -22,7 +21,7 @@ def prompt_messages(job: Job, text: str) -> list[dict]:
 
 
 def _key(e: Example) -> str:
-    return hashlib.sha1(" ".join(e.input.split()).lower().encode()).hexdigest()
+    return example_key(e.input)
 
 
 def dedupe(rows: list[Example]) -> list[Example]:
@@ -36,7 +35,16 @@ def dedupe(rows: list[Example]) -> list[Example]:
 
 
 def split(job: Job, real: list[Example]) -> tuple[list[Example], list[Example]]:
-    """Newest `eval_fraction` of real rows (by ts) is the eval set; eval_only rows always go to eval."""
+    """Newest `eval_fraction` of real rows (by ts) is the eval set; eval_only rows always go to eval.
+
+    With `split.eval_from = "human"`, the rows a person labeled are the eval set instead (once there are at
+    least `split.min_human_eval` of them, default 50), so the gate measures agreement with them, not a model.
+    """
+    if job.split.get("eval_from") == "human":
+        human = [e for e in real if e.origin.startswith("human:")]
+        if len(human) >= int(job.split.get("min_human_eval", 50)):
+            rest = [e for e in real if not e.origin.startswith("human:")]
+            return [e for e in rest if not e.eval_only], human
     frac = float(job.split.get("eval_fraction", 0.15))
     trainable = sorted([e for e in real if not e.eval_only], key=lambda e: (e.ts, _key(e)))
     cut = int(len(trainable) * (1 - frac))

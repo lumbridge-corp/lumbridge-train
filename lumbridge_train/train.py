@@ -17,13 +17,15 @@ def uv() -> str:
     return os.environ.get("LT_UV", str(expand("~/.local/bin/uv")))
 
 
-def sft_toml(job: Job, run_dir: Path) -> Path:
+def sft_toml(job: Job, run_dir: Path, remote_dir: Path | None = None) -> Path:
+    """Writes the lumbridge-rl SFT config. With `remote_dir`, paths point there (a rented machine)."""
     t = job.train
     renderer = t.get("renderer")
+    base = remote_dir or run_dir
     lines = [
         'mode = "sft"',
         f"max_steps = {int(t.get('max_steps', 60))}",
-        f'output_dir = "{run_dir / "rl"}"',
+        f'output_dir = "{base / "rl"}"',
         "clean = true",
         "",
         "[run]",
@@ -35,7 +37,7 @@ def sft_toml(job: Job, run_dir: Path) -> Path:
         f'name = "{t["student"]}"',
         "",
         "[data]",
-        f'name = "{run_dir / "sft"}"',
+        f'name = "{base / "sft"}"',
         f"seq_len = {int(t.get('seq_len', 2048))}",
         f"batch_size = {int(t.get('batch_size', 16))}",
         "",
@@ -46,7 +48,7 @@ def sft_toml(job: Job, run_dir: Path) -> Path:
         lines += ["", "[renderer]"] + [f"{k} = {v!r}".replace("'", '"').replace("False", "false").replace("True", "true")
                                      for k, v in renderer.items()]
     lines += ["", "[deployment]", "num_train_gpus = 1"]
-    path = run_dir / "sft.toml"
+    path = run_dir / ("sft-remote.toml" if remote_dir else "sft.toml")
     path.write_text("\n".join(lines) + "\n")
     return path
 

@@ -4,6 +4,8 @@
     python -m lumbridge_train run     <job.toml> [--no-promote]
     python -m lumbridge_train due     <job.toml>        # exit 0 if today is the job's training day
     python -m lumbridge_train profile <langfuse-archive-root>
+    python -m lumbridge_train label   <job.toml> [<job.toml> ...] [--host H] [--port P] [--no-prelabel]
+    python -m lumbridge_train cloud-reap [--older-than HOURS]   # delete our rented pods left running
 """
 
 from __future__ import annotations
@@ -27,7 +29,26 @@ def main(argv: list[str] | None = None) -> int:
     d.add_argument("job")
     p = sub.add_parser("profile")
     p.add_argument("root")
+    lb = sub.add_parser("label", help="labeling page: a teacher pre-labels, a person confirms or fixes")
+    lb.add_argument("jobs", nargs="+")
+    lb.add_argument("--host", default="127.0.0.1")
+    lb.add_argument("--port", type=int, default=8861)
+    lb.add_argument("--no-prelabel", action="store_true")
+    cr = sub.add_parser("cloud-reap", help="delete rented pods this tool started that are still running")
+    cr.add_argument("--older-than", type=float, default=0.0, help="only pods older than this many hours")
     a = ap.parse_args(argv)
+
+    if a.cmd == "cloud-reap":
+        from . import cloud
+
+        print(f"cloud-reap: deleted {cloud.reap(older_than_h=a.older_than)} pod(s)")
+        return 0
+
+    if a.cmd == "label":
+        from . import label
+
+        label.serve([load(j) for j in a.jobs], host=a.host, port=a.port, prelabel=not a.no_prelabel)
+        return 0
 
     if a.cmd == "profile":
         profile.main(a.root)
