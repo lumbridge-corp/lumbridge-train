@@ -1,0 +1,53 @@
+# Example job: route support tickets. No real data needed: the teacher writes made-up tickets,
+# labels them blind, and the student learns from the ones where both passes agree.
+workdir = "~/lumbridge-train-runs/example-ticket-routing"
+
+[job]
+name = "example-ticket-routing"
+instructions = "You route one customer support ticket to the right team and say whether it is urgent."
+
+[[job.fields]]
+name = "category"
+choices = ["billing", "bug", "account", "feature", "other"]
+descriptions = { billing = "charges, refunds, invoices, plans", bug = "something is broken or wrong", account = "login, password, profile, access", feature = "a request for something new", other = "none of the above" }
+
+[[job.fields]]
+name = "urgent"
+type = "bool"
+
+# Add your own rows, for example:
+# [[source]]
+# type = "jsonl"
+# path = "~/data/tickets/*.jsonl"   # {"input": "...", "category": "bug", "urgent": true, "ts": 1790000000}
+
+# Any OpenAI-compatible endpoint. A model on your own machine keeps everything local.
+[teachers.local]
+base_url = "http://127.0.0.1:8000/v1"
+model = "your-model"
+concurrency = 2
+# api_key_env = "TEACHER_API_KEY"
+# extra_body = { chat_template_kwargs = { enable_thinking = false } }
+
+[synth]
+writer = "local"
+labeler = "local"
+per_choice_min = 60
+
+[split]
+eval_fraction = 0.2
+
+[train]
+student = "Qwen/Qwen3-0.6B"
+rl_dir = "~/src/lumbridge-rl"
+max_steps = 60
+batch_size = 16
+seq_len = 1024
+lr = 2e-5
+renderer = { name = "qwen3", enable_thinking = false }
+
+[gate]
+metric = "category_acc"
+min_gain = 0.0
+
+[schedule]
+training_day = "sunday"
