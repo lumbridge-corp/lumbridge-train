@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- README: a header image and a terminal session image, in `docs/assets/`. No code changes.
+
 ## 0.2.0
 
 - Labeling page (`python -m lumbridge_train label`): a teacher model pre-labels, a person confirms or fixes with one key press; disagreements first. Answers override the source in every build, and `split.eval_from = "human"` makes them the eval set.

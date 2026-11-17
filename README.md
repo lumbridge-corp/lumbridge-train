@@ -1,8 +1,12 @@
+![Lumbridge Train: small models that learn your jobs.](docs/assets/banner.jpg)
+
 # Lumbridge Train
 
 Train small decision models from your own work, on your own machine. For anyone running agents on their own hardware (a DGX Spark, a workstation GPU) who wants a fast, private model that gets better at their jobs every week. Your data, the training and the weights never leave the box.
 
 Part of [Lumbridge](https://github.com/lumbridge-corp). Early.
+
+![Terminal: a mail-triage job builds 1,261 examples, trains Qwen3-0.6B with lumbridge-rl, lifts category accuracy from 11.8% to 79.3% and is promoted; a second run rents a cloud GPU for 9.1 minutes and deletes it.](docs/assets/terminal.png)
 
 ## The learning loop
 
@@ -31,7 +35,7 @@ Our first job triages a founder's own mail on a DGX Spark. The data was 1,167 re
 
 ## Status
 
-- **Version:** 0.2.0. Interfaces can change until 1.0.
+- **Version:** 0.2.1. Interfaces can change until 1.0.
 - **Runs on:** Linux with one NVIDIA GPU, tested on a DGX Spark (GB10, aarch64, CUDA 13), or on a GPU rented per run (tested on an RTX PRO 6000).
 - **Jobs:** decisions with fixed answers: one choice field plus optional true/false fields, answered as one JSON object.
 - **Not yet:**
